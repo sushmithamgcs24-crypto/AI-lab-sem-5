@@ -11,13 +11,13 @@ def get_moves(state):
 
     # Possible movements: Up, Down, Left, Right
     directions = [
-        (-1, 0, 'Up'),
-        (1, 0, 'Down'),
-        (0, -1, 'Left'),
-        (0, 1, 'Right')
+        (-1, 0), # Up
+        (1, 0), # Down
+        (0, -1), # Left
+        (0, 1) # Right
     ]
 
-    for dr, dc, action in directions:
+    for dr, dc in directions:
         new_row = row + dr
         new_col = col + dc
 
@@ -32,10 +32,16 @@ def get_moves(state):
             new_state[zero], new_state[new_zero] = \
                 new_state[new_zero], new_state[zero]
 
-            # Store the state along with the action taken to reach it
-            moves.append((tuple(new_state), action))
+            moves.append(tuple(new_state))
 
     return moves
+
+
+def print_state(state):
+    """Display the puzzle state as a 3x3 grid."""
+    for i in range(0, 9, 3):
+        print(state[i], state[i + 1], state[i + 2])
+    print()
 
 
 def dfs(initial, goal):
@@ -49,8 +55,8 @@ def dfs(initial, goal):
     # Store visited states
     visited = set()
 
-    # parent_map[child_state] = (parent_state, action_taken)
-    parent_map = {initial: (None, None)}
+    # parent_map[child_state] = parent_state
+    parent_map = {initial: None}
 
     while stack:
         # Remove the top element (LIFO)
@@ -58,15 +64,14 @@ def dfs(initial, goal):
 
         # Check if goal is reached
         if current == goal:
-            # Reconstruct the sequence of actions from goal back to initial state
-            actions = []
+            # Reconstruct the sequence of board states from goal back to initial state
+            states_path = []
             curr = goal
-            while parent_map[curr][0] is not None:
-                parent, action = parent_map[curr]
-                actions.append(action)
-                curr = parent
-            actions.reverse()
-            return actions
+            while curr is not None:
+                states_path.append(curr)
+                curr = parent_map[curr]
+            states_path.reverse()
+            return states_path
 
         # Skip if already visited
         if current in visited:
@@ -76,9 +81,9 @@ def dfs(initial, goal):
 
         # Generate possible moves
         # Reversed so they are pushed onto stack in a natural priority order
-        for new_state, action in reversed(get_moves(current)):
+        for new_state in reversed(get_moves(current)):
             if new_state not in visited and new_state not in parent_map:
-                parent_map[new_state] = (current, action)
+                parent_map[new_state] = current
                 stack.append(new_state)
 
     return None
@@ -88,7 +93,7 @@ def dfs(initial, goal):
 # Main Program
 # -------------------------------
 
-print("8-PUZZLE USING DFS (OPTIMIZED NO DEPTH-LIMIT)")
+print("8-PUZZLE USING DFS (GRID VISUALIZATION)")
 print()
 
 print("Enter Initial State:")
@@ -108,13 +113,16 @@ initial = tuple(initial)
 goal = tuple(goal)
 
 # Perform DFS
-solution_moves = dfs(initial, goal)
+solution_states = dfs(initial, goal)
 
 # Display result
-if solution_moves is not None:
+if solution_states is not None:
     print("\nGoal Reached!")
-    print("\nSolution Moves:")
-    print(" -> ".join(solution_moves))
-    print("Total moves:", len(solution_moves))
+    print("\nSolution Path (Board States):")
+    print(f"Total steps: {len(solution_states) - 1}\n")
+
+    for step, state in enumerate(solution_states):
+        print(f"--- Step {step} ---")
+        print_state(state)
 else:
     print("\nNo solution found.")
