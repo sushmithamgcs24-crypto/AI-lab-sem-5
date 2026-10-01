@@ -11,13 +11,13 @@ def get_moves(state):
 
     # Possible movements: Up, Down, Left, Right
     directions = [
-        (-1, 0), # Up
-        (1, 0), # Down
-        (0, -1), # Left
-        (0, 1) # Right
+        (-1, 0, 'Up'),
+        (1, 0, 'Down'),
+        (0, -1, 'Left'),
+        (0, 1, 'Right')
     ]
 
-    for dr, dc in directions:
+    for dr, dc, action in directions:
         new_row = row + dr
         new_col = col + dc
 
@@ -32,36 +32,41 @@ def get_moves(state):
             new_state[zero], new_state[new_zero] = \
                 new_state[new_zero], new_state[zero]
 
-            moves.append(tuple(new_state))
+            # Store the state along with the action taken to reach it
+            moves.append((tuple(new_state), action))
 
     return moves
 
 
-def print_state(state):
-    """Display the puzzle state."""
-    for i in range(0, 9, 3):
-        print(state[i], state[i + 1], state[i + 2])
-    print()
-
-
-def dfs(initial, goal, max_depth=15):
+def dfs(initial, goal):
     """
-    Perform Depth-First Search with a maximum depth limit 
-    to prevent infinite deep paths and memory exhaustion.
+    Perform Depth-First Search without depth limits.
+    Uses a parent map to completely eliminate slow path-copying overhead.
     """
-    # Stack contains (current_state, path, current_depth)
-    stack = [(initial, [initial], 0)]
+    # Stack contains only the state
+    stack = [initial]
 
-    # Store visited states to avoid cycles
+    # Store visited states
     visited = set()
+
+    # parent_map[child_state] = (parent_state, action_taken)
+    parent_map = {initial: (None, None)}
 
     while stack:
         # Remove the top element (LIFO)
-        current, path, depth = stack.pop()
+        current = stack.pop()
 
         # Check if goal is reached
         if current == goal:
-            return path
+            # Reconstruct the sequence of actions from goal back to initial state
+            actions = []
+            curr = goal
+            while parent_map[curr][0] is not None:
+                parent, action = parent_map[curr]
+                actions.append(action)
+                curr = parent
+            actions.reverse()
+            return actions
 
         # Skip if already visited
         if current in visited:
@@ -69,15 +74,12 @@ def dfs(initial, goal, max_depth=15):
 
         visited.add(current)
 
-        # Only expand nodes if we haven't crossed the depth threshold
-        if depth < max_depth:
-            # We reverse the moves to search them in a natural order (Up -> Down -> Left -> Right)
-            # because a stack is Last-In, First-Out (LIFO).
-            for new_state in reversed(get_moves(current)):
-                if new_state not in visited:
-                    stack.append(
-                        (new_state, path + [new_state], depth + 1)
-                    )
+        # Generate possible moves
+        # Reversed so they are pushed onto stack in a natural priority order
+        for new_state, action in reversed(get_moves(current)):
+            if new_state not in visited and new_state not in parent_map:
+                parent_map[new_state] = (current, action)
+                stack.append(new_state)
 
     return None
 
@@ -86,7 +88,7 @@ def dfs(initial, goal, max_depth=15):
 # Main Program
 # -------------------------------
 
-print("8-PUZZLE USING DFS (DEPTH-LIMITED)")
+print("8-PUZZLE USING DFS (OPTIMIZED NO DEPTH-LIMIT)")
 print()
 
 print("Enter Initial State:")
@@ -105,20 +107,14 @@ for i in range(3):
 initial = tuple(initial)
 goal = tuple(goal)
 
-# Perform DFS with a maximum path length restriction (e.g., 15)
-# Note: For highly randomized grids, pure DFS is not recommended. 
-# Use A* with Manhattan distance if your initial state is very far from the goal.
-solution = dfs(initial, goal, max_depth=15)
+# Perform DFS
+solution_moves = dfs(initial, goal)
 
 # Display result
-if solution:
+if solution_moves is not None:
     print("\nGoal Reached!")
-    print("\nSolution Path:")
-    print("Number of moves:", len(solution) - 1)
-    print()
-
-    for step, state in enumerate(solution):
-        print("Step", step)
-        print_state(state)
+    print("\nSolution Moves:")
+    print(" -> ".join(solution_moves))
+    print("Total moves:", len(solution_moves))
 else:
-    print("\nNo solution found within the maximum depth threshold.")
+    print("\nNo solution found.")
