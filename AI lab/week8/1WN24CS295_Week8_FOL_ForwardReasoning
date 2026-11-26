@@ -1,0 +1,220 @@
+import re
+
+#1. Parsing and representation
+
+def is_variable(term):
+    return isinstance(term, str) and term[0].islower() and '(' not in term
+
+def parse_atom(atom_str):
+    """Parses 'Predicate(arg1, arg2)' into ('Predicate', ['arg1', 'arg2'])"""
+    atom_str = atom_str.strip()
+    match = re.match(r'^([A-Za-z0-9_]+)\((.*)\)$', atom_str)
+    if not match:
+        return (atom_str, [])
+    pred = match.group(1)
+    args = [arg.strip() for arg in match.group(2).split(',') if arg.strip()]
+    return (pred, args)
+
+def format_atom(atom):
+    """Formats ('Predicate', ['arg1', 'arg2']) back to 'Predicate(arg1, arg2)'"""
+    pred, args = atom
+    if not args:
+        return pred
+    return f"{pred}({', '.join(args)})"
+
+def parse_clause(clause_str):
+    """Parses 'P1(x) ^ P2(x) => Q(x)' into ([P1, P2], Q) or 'Fact(A)' into ([], Fact(A))"""
+    if '=>' in clause_str:
+        lhs, rhs = clause_str.split('=>')
+        premises = [parse_atom(p) for p in lhs.split('^')]
+        conclusion = parse_atom(rhs)
+        return (premises, conclusion)
+    else:
+        return ([], parse_atom(clause_str))
+
+
+#2. Unification
+
+def subst(theta, atom):
+    # substitution of the theta variable
+    pred, args = atom
+    new_args = []
+    for arg in args:
+        while arg in theta:
+            arg = theta[arg]
+        new_args.append(arg)
+    return (pred, new_args)
+
+def unify_var(var, x, theta):
+    if var in theta:
+        return unify(theta[var], x, theta)
+    elif x in theta:
+        return unify(var, theta[x], theta)
+    elif occurs_check(var, x, theta):
+        return None
+    else:
+        new_theta = theta.copy()
+        new_theta[var] = x
+        return new_theta
+
+def occurs_check(var, x, theta):
+    if var == x:
+        return True
+    elif is_variable(x) and x in theta:
+        return occurs_check(var, theta[x], theta)
+    return False
+
+def unify(x, y, theta=None):
+    #Standard FOL Unification
+    if theta is None:
+        theta = {}
+    if theta is None:
+        return None
+    if x == y:
+        return theta
+    elif is_variable(x):
+        return unify_var(x, y, theta)
+    elif is_variable(y):
+        return unify_var(y, x, theta)
+    elif isinstance(x, tuple) and isinstance(y, tuple):
+        if x[0] != y[0] or len(x[1]) != len(y[1]):
+            return None
+        for a, b in zip(x[1], y[1]):
+            theta = unify(a, b, theta)
+            if theta is None:
+                return None
+        return theta
+    else:
+        return None
+
+
+# 3 Standardize the variables
+
+var_counter = 0
+
+def standardize_variables(rule):
+    #Rename all variables with unique names
+    global var_counter
+    premises, conclusion = rule
+    mapping = {}
+
+    def rename_atom(atom):
+        global var_counter
+        pred, args = atom
+        new_args = []
+        for arg in args:
+            if is_variable(arg):
+                if arg not in mapping:
+                    var_counter += 1
+                    mapping[arg] = f"v_{var_counter}"
+                new_args.append(mapping[arg])
+            else:
+                new_args.append(arg)
+        return (pred, new_args)
+
+    new_premises = [rename_atom(p) for p in premises]
+    new_conclusion = rename_atom(conclusion)
+    return (new_premises, new_conclusion)
+
+def is_renaming(atom1, atom2):
+    """Checks if atom1 is simply a variable renaming of atom2."""
+    if atom1[0] != atom2[0] or len(atom1[1]) != len(atom2[1]):
+        return False
+    map1, map2 = {}, {}
+    for a, b in zip(atom1[1], atom2[1]):
+        if is_variable(a) and is_variable(b):
+            if a in map1 and map1[a] != b:
+                return False
+            if b in map2 and map2[b] != a:
+                return False
+            map1[a] = b
+            map2[b] = a
+        elif a != b:
+            return False
+    return True
+
+
+# 4. FOL algorithm
+
+def find_substitutions(premises, facts, theta):
+    """Recursively finds all substitutions theta matching premises to KB facts."""
+    if not premises:
+        yield theta
+        return
+    first, rest = premises[0], premises[1:]
+    for fact in facts:
+        new_theta = unify(first, fact, theta.copy())
+        if new_theta is not None:
+            yield from find_substitutions(rest, facts, new_theta)
+
+def fol_fc_ask(kb_rules, kb_facts, alpha):
+    # Check if query is already directly satisfied by initial facts
+    for fact in kb_facts:
+        phi = unify(fact, alpha, {})
+        if phi is not None:
+            return phi
+
+    while True:
+        new_facts = []
+        for rule in kb_rules:
+            premises, conclusion = standardize_variables(rule)
+            for theta in find_substitutions(premises, kb_facts, {}):
+                q_prime = subst(theta, conclusion)
+
+                # Check if q' is already a renaming of something in KB or new
+                already_exists = any(
+                    is_renaming(q_prime, existing) for existing in (kb_facts + new_facts)
+                )
+
+                if not already_exists:
+                    new_facts.append(q_prime)
+                    phi = unify(q_prime, alpha, {})
+                    if phi is not None:
+                        return phi
+
+        if not new_facts:
+            return False
+
+        kb_facts.extend(new_facts)
+
+
+# --- 5. User Input & Execution ---
+
+def main():
+    print("Forward Chaining")
+    print("Syntax Rules:")
+    print("  - Variables: lowercase (e.g., x, y)")
+    print("  - Constants & Predicates: Capitalized ")
+    print("  - Rules: use '^' for AND, '=>' for IMPLIES ")
+    print("  - Type 'DONE' when finished entering KB sentences.\n")
+
+    kb_rules = []
+    kb_facts = []
+
+    while True:
+        entry = input("Enter KB fact or rule (or DONE): ").strip()
+        if entry.upper() == 'DONE':
+            break
+        if not entry:
+            continue
+        premises, conclusion = parse_clause(entry)
+        if premises:
+            kb_rules.append((premises, conclusion))
+        else:
+            kb_facts.append(conclusion)
+
+    query_str = input("\nEnter query (alpha): ").strip()
+    alpha = parse_atom(query_str)
+
+    result = fol_fc_ask(kb_rules, kb_facts, alpha)
+
+    print("\n--- Result ---")
+    if result is False:
+        print("Output: False (Query cannot be proven from the KB)")
+    else:
+        # Filter out internal standardized variables for clean output
+        clean_sub = {k: v for k, v in result.items() if not k.startswith('v_')}
+        print(f"{query_str} is true\nSubstitution: φ = {clean_sub}")
+
+if __name__ == "__main__":
+    main()
